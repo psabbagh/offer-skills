@@ -1,0 +1,4 @@
+interface:
+  display_name: "Offer Price"
+  short_description: "See where your price sits against competitors"
+  default_prompt: "Use $offer-price to show where my price sits against my competitors."

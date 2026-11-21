@@ -1,0 +1,7 @@
+interface:
+  display_name: "Offer Build"
+  short_description: "Rebuild your offer and test it on simulated buyers"
+  default_prompt: "Use $offer-build --quick to rebuild my offer and test it against the old one."
+
+policy:
+  allow_implicit_invocation: false

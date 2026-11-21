@@ -1,0 +1,41 @@
+{
+  "name": "offer-skills",
+  "version": "1.0.0",
+  "description": "Three free skills for your offer: find what your competitors offer and charge, with every price checked against its source, see where your price sits, and rebuild your offer on the ideas in $100M Offers, tested on simulated buyers. Keeps a library and tells you what changed next time. No API keys.",
+  "author": {
+    "name": "psabbagh",
+    "url": "https://github.com/psabbagh"
+  },
+  "homepage": "https://github.com/psabbagh/offer-skills",
+  "repository": "https://github.com/psabbagh/offer-skills",
+  "license": "MIT",
+  "keywords": [
+    "offer",
+    "pricing",
+    "competitors",
+    "competitor-research",
+    "hormozi-ideas",
+    "sales",
+    "small-business",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Offer Skills",
+    "shortDescription": "See what competitors charge and rebuild your offer",
+    "longDescription": "Three skills for business owners. offer finds your competitors online (web search, the public Meta Ad Library, their sales and pricing pages) and near you, and builds one table of their services, prices and guarantees, each price checked word for word against its source. offer-price shows where your price sits, with what each sale leaves. offer-build scores every offer on seven questions with quoted evidence, drafts your new offer page checked against facts you approve, and tests old against new on the same simulated buyers. Free, no API keys.",
+    "developerName": "psabbagh",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/psabbagh/offer-skills",
+    "defaultPrompt": [
+      "Research what my competitors offer and charge. My website is <url>.",
+      "Where does my price sit against my competitors?",
+      "Rebuild my offer and test it against the old one."
+    ]
+  }
+}

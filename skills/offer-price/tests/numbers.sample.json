@@ -1,0 +1,13 @@
+{
+  "business": "A sample coaching program (made up)",
+  "model": "subscription",
+  "unit": "member",
+  "currency": "$",
+  "price": 300,
+  "variable": [{"label": "Coach time per member", "cost": 90}, {"label": "Software and card fees", "cost": 15}],
+  "cost_to_win_customer": 250,
+  "churn": 0.08,
+  "new_customers": [5, 6, 8, 10, 12, 12, 14, 15, 16, 18, 20, 22],
+  "fixed_monthly": [{"label": "Tools", "cost": 300}],
+  "startup": [{"label": "Course build", "cost": 2000}]
+}

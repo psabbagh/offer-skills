@@ -1,0 +1,23 @@
+{
+  "name": "offer-skills",
+  "owner": {
+    "name": "psabbagh",
+    "url": "https://github.com/psabbagh"
+  },
+  "metadata": {
+    "description": "Three free skills for your offer: find what your competitors offer and charge, with every price checked against its source, see where your price sits, and rebuild your offer on the ideas in $100M Offers, tested on simulated buyers. Keeps a library and tells you what changed next time. No API keys."
+  },
+  "plugins": [
+    {
+      "name": "offer-skills",
+      "description": "Three free skills for your offer: find what your competitors offer and charge, with every price checked against its source, see where your price sits, and rebuild your offer on the ideas in $100M Offers, tested on simulated buyers. Keeps a library and tells you what changed next time. No API keys.",
+      "author": {
+        "name": "psabbagh",
+        "url": "https://github.com/psabbagh"
+      },
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/psabbagh/offer-skills"
+    }
+  ]
+}

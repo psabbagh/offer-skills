@@ -1,0 +1,33 @@
+{
+  "business": "Client Engine (an example: group coaching that helps small agency owners win retainer clients)",
+  "target": "Owners of marketing agencies with 1 to 10 people who get most clients by referral and want a steadier flow",
+  "category": "coaching or training to win more agency clients",
+  "currency": "$",
+  "budget_period": "month",
+  "offer_price": 1000,
+  "age": [26, 55],
+  "segments": [
+    {"name": "Solo founder, under $10k a month in revenue", "share": 0.40, "income": [40000, 90000], "budget": [0, 300]},
+    {"name": "Small team of 2 to 5, $10k to $40k a month", "share": 0.40, "income": [70000, 160000], "budget": [200, 1500]},
+    {"name": "Established agency of 6 to 10, over $40k a month", "share": 0.20, "income": [120000, 300000], "budget": [1000, 5000]}
+  ],
+  "behaviours": [
+    {"name": "Asks peers first", "share": 0.30, "how": "Buys only what another agency owner they trust has used."},
+    {"name": "Free content first", "share": 0.30, "how": "Watches free videos and podcasts for months before paying anyone."},
+    {"name": "Quick to try, quick to cancel", "share": 0.20, "how": "Joins programs on impulse and cancels the first month it does not pay off."},
+    {"name": "Careful buyer", "share": 0.20, "how": "Reads every page, books a call, and asks for proof from agencies like theirs."}
+  ],
+  "today": [
+    {"name": "referrals and hoping, with nothing structured", "share": 0.40},
+    {"name": "free YouTube videos and podcasts about agency growth", "share": 0.30},
+    {"name": "a paid agency coaching group or community", "share": 0.15},
+    {"name": "cold email or ads they run themselves", "share": 0.15}
+  ],
+  "situations": [
+    "Two retainers ended last quarter and nothing has replaced them; that is $6,000 a month gone.",
+    "A good month is followed by a scramble every time a client leaves.",
+    "You already paid for one course that taught theory and no system.",
+    "Your best clients came from one partner who has stopped sending work."
+  ],
+  "known_objections": ["already tried a course that did not work", "no time to do the outreach", "price"]
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Offer"
+  short_description: "See what competitors offer and charge, checked"
+  default_prompt: "Use $offer to research what my competitors offer and charge. My website is <url>."
+
+policy:
+  allow_implicit_invocation: false

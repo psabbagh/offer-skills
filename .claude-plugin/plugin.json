@@ -1,0 +1,22 @@
+{
+  "name": "offer-skills",
+  "version": "1.0.0",
+  "description": "Three free skills for your offer: find what your competitors offer and charge, with every price checked against its source, see where your price sits, and rebuild your offer on the ideas in $100M Offers, tested on simulated buyers. Keeps a library and tells you what changed next time. No API keys.",
+  "author": {
+    "name": "psabbagh",
+    "url": "https://github.com/psabbagh"
+  },
+  "homepage": "https://github.com/psabbagh/offer-skills",
+  "repository": "https://github.com/psabbagh/offer-skills",
+  "license": "MIT",
+  "keywords": [
+    "offer",
+    "pricing",
+    "competitors",
+    "competitor-research",
+    "hormozi-ideas",
+    "sales",
+    "small-business",
+    "skills"
+  ]
+}
