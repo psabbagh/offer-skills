@@ -222,6 +222,95 @@ def money(value, currency=None) -> str:
     return sym + text if sym else (text + (" " + currency if currency else ""))
 
 
+# ---------------------------------------------------------------- offer terms
+
+# The fields of an offer row that hold words copied from a page, besides the price. Each is a list
+# of short texts, and `offer.py table` checks every one word for word against the business's pages.
+TERM_FIELDS = ("free_way_in", "commitment", "limits", "speed")
+COPIED_LISTS = ("includes", "bonuses") + TERM_FIELDS
+
+# How the table counts what competitors state. A tag only sorts words already checked on the page;
+# it never adds a claim. (field, tag, what "N of M ..." says, pattern)
+TERMS = [
+    ("free_way_in", "free plan", "have a free plan",
+     r"free\s+(?:plan|tier|forever|version|account|edition|package)|forever\s+free|free\s+to\s+start|freemium|\$0\b"),
+    ("free_way_in", "free trial", "offer a free trial", r"\btrial\b"),
+    ("free_way_in", "demo", "offer a demo", r"\bdemo\b"),
+    ("free_way_in", "free quote", "give a free quote, inspection or consultation",
+     r"quote|estimate|inspection|assessment|consult|audit|discovery\s+call|strategy\s+call"),
+    ("commitment", "cancel anytime", "say cancel anytime",
+     r"cancel\s+(?:at\s+)?any\s?time|no\s+(?:long[- ]term\s+)?contracts?\b|no\s+commitment|month[- ]to[- ]month|"
+     r"no\s+lock[- ]?in"),
+    ("commitment", "annual billing", "bill yearly", r"annual|yearly|per\s+year|/\s?y(?:ea)?r\b"),
+    ("commitment", "setup fee", "charge a setup fee",
+     r"set[- ]?up\s+(?:fee|cost|charge)|onboarding\s+fee|implementation\s+fee|activation\s+fee"),
+    ("commitment", "minimum contract", "ask for a minimum contract",
+     r"\d+[- ](?:month|year)s?\s+(?:contract|minimum|commitment|term)|minimum\s+(?:term|contract|commitment)"),
+    ("commitment", "deposit", "take a deposit", r"deposit"),
+    ("commitment", "call-out fee", "charge a call-out fee",
+     r"call[- ]?out|trip\s+(?:charge|fee)|service\s+call\s+fee|travel\s+fee"),
+    ("guarantee", "guarantee", "state a guarantee",
+     r"guarantee|money[- ]back|refund|risk[- ]free|or\s+you\s+don'?t\s+pay|or\s+your\s+money"),
+    ("limits", "limits", "state limits (caps, seats, area, hours)", r"\S"),
+    ("speed", "speed", "say how fast (go live, response, same day)", r"\S"),
+    ("includes", "features", "list what each plan includes", r"\S"),
+    ("package", "plan names", "name their plans", r"\S"),
+]
+RISK_REVERSAL = ("free plan", "free trial", "cancel anytime", "guarantee")
+_MONTHLY = re.compile(r"\bmonthly\b|month[- ]to[- ]month|per\s+month|/\s?mo(?:nth)?\b", re.I)
+_BILLED_YEARLY = re.compile(r"billed\s+(?:annually|yearly|once a year)|paid\s+(?:annually|yearly)|per\s+year|/\s?y(?:ea)?r\b|"
+                            r"annual(?:ly)?\b|yearly", re.I)
+
+
+def as_list(value) -> list:
+    if not value:
+        return []
+    return [value] if isinstance(value, str) else [x for x in value if isinstance(x, str) and x]
+
+
+def row_tags(row: dict) -> set:
+    tags = set()
+    for field, tag, _, pattern in TERMS:
+        if any(re.search(pattern, v, re.I) for v in as_list(row.get(field))):
+            tags.add(tag)
+    # "$199/mo, billed annually": the price says how it is billed
+    if _BILLED_YEARLY.search(row.get("price_text") or ""):
+        tags.add("annual billing")
+    if tags & set(RISK_REVERSAL):
+        tags.add("risk reversal")
+    return tags
+
+
+def term_summary(rows: list) -> list:
+    """For each term: how many competitors state it (in any of their rows), and whether the owner does.
+    'annual only' is a competitor that bills yearly with no monthly price and no monthly option stated."""
+    by = {}
+    for r in rows:
+        by.setdefault(r.get("competitor", ""), []).append(r)
+    who = sorted(k for k in by if k != "you")
+    tags = {k: set().union(*(row_tags(r) for r in by[k])) for k in by}
+    for k, rs in by.items():
+        monthly = any(r.get("period") == "month" and not _BILLED_YEARLY.search(r.get("price_text") or "")
+                      for r in rs) or any(_MONTHLY.search(v) for r in rs for v in as_list(r.get("commitment")))
+        if "annual billing" in tags[k] and not monthly:
+            tags[k].add("annual only")
+    labels = [(tag, label) for _, tag, label, _ in TERMS]
+    labels.insert(6, ("annual only", "sell annual only"))
+    labels.append(("risk reversal", "take the risk off the buyer (free plan, trial, cancel anytime or guarantee)"))
+    out = []
+    for tag, label in labels:
+        out.append({"tag": tag, "label": label, "count": sum(1 for k in who if tag in tags[k]), "of": len(who),
+                    "you": tag in tags.get("you", set()) if "you" in by else None})
+    return out
+
+
+def term_lines(terms: list) -> tuple:
+    """('4 of 11 have a free plan', ...), ('none of 11 offer a demo', ...)."""
+    said = ["%d of %d %s" % (t["count"], t["of"], t["label"]) for t in terms if t["count"]]
+    none = ["none of %d %s" % (t["of"], t["label"]) for t in terms if not t["count"] and t["of"]]
+    return said, none
+
+
 def domain(url: str) -> str:
     url = (url or "").strip().lower()
     url = re.sub(r"^[a-z]+://", "", url)

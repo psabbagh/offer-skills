@@ -19,8 +19,10 @@ competitors.json, pages.jsonl (fetched) and agent-pages.jsonl (read by the agent
 fetch, word for word), offers.json (written by the agent), then table.json, offer-table.md,
 offer-table.csv, offer-table.html, checks.txt and changes.md.
 
-The tool never writes a price. A price reaches the table only when its exact words are found in
-the page, ad or owner statement the row names as its source. Everything else is unknown.
+The tool never writes a price or a term. A price reaches the table only when its exact words are
+found in the page, ad or owner statement the row names as its source. The plan name, each feature
+and extra, the free way in, the commitment, the limits, the speed and the guarantee reach it only
+when their exact words are found on that business's own pages or ads. Everything else is unknown.
 """
 
 from __future__ import annotations
@@ -42,9 +44,9 @@ import urllib.robotparser
 from html.parser import HTMLParser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from offerlib import (OfferError, domain, found_in, library_root, money, new_run, parse_amount,  # noqa: E402
-                      parse_period, read_json, read_jsonl, resolve_run, runs, slugify, write_json,
-                      write_text)
+from offerlib import (COPIED_LISTS, OfferError, as_list, domain, found_in, library_root, money,  # noqa: E402
+                      new_run, parse_amount, parse_period, read_json, read_jsonl, resolve_run, runs,
+                      slugify, squash, term_lines, term_summary, write_json, write_text)
 
 USER_AGENT = "offer-skill/1.0 (competitor price research; reads public pages only)"
 FETCH_BASE_ENV = "OFFER_FETCH_ALLOW_LOCAL"  # tests only: allow fetching from 127.0.0.1
@@ -524,6 +526,11 @@ def sources(run: str) -> dict:
 
 
 _PRICE_LINE = re.compile(r"(us\$|ca\$|a\$|\$|€|£)\s?\d|\d\s?(usd|eur|gbp)\b|\bfree\b|/\s?mo\b|per month", re.I)
+# lines that may state a plan term: a trial or demo, a commitment, a limit, a speed
+_TERM_LINE = re.compile(r"\btrial\b|\bdemo\b|free (?:quote|estimate|inspection|consultation)|cancel|contract|"
+                        r"commitment|annual|billed|set[- ]?up fee|deposit|call[- ]?out|unlimited|up to \d|per (?:user|seat)|"
+                        r"\bseats?\b|limit|same[- ]day|next[- ]day|within \d|response time|go live|onboarding|"
+                        r"service area|we serve", re.I)
 
 
 def cmd_evidence(a):
@@ -535,8 +542,10 @@ def cmd_evidence(a):
         by_key.setdefault(s["key"], []).append((url, s))
     ads_by_id = {ad["library_id"]: ad for ad in read_json(os.path.join(run, "ads.json"), default=[])}
     lines = ["# Evidence: %s" % comps["business"], "",
-             "Lines that hold a price or a guarantee, with the page they came from. Copy prices into "
-             "offers.json exactly as written here.", ""]
+             "Lines that hold a price, a plan term (trial, demo, commitment, limit, speed) or a guarantee, "
+             "with the page they came from. Copy them into offers.json exactly as written here. Plan names "
+             "and feature lists are often not on these lines: read them in the page text in pages.jsonl "
+             "or agent-pages.jsonl, and copy each one word for word.", ""]
     for c in [{"key": "you", "name": "you (the owner)"}] + comps["competitors"]:
         lines.append("## %s (%s)" % (c["name"], c["key"]))
         pages = by_key.get(c["key"], [])
@@ -551,10 +560,10 @@ def cmd_evidence(a):
             hits = []
             for ln in s["text"].splitlines():
                 ln = ln.strip()
-                if ln and len(ln) < 400 and (_PRICE_LINE.search(ln) or _GUARANTEE.search(ln)) and ln not in hits:
+                if ln and len(ln) < 400 and (_PRICE_LINE.search(ln) or _GUARANTEE.search(ln) or _TERM_LINE.search(ln)) and ln not in hits:
                     hits.append(ln)
-            lines.append("- %s %s" % (url, "(%d lines)" % len(hits) if hits else "(no price or guarantee seen)"))
-            for h in hits[:25]:
+            lines.append("- %s %s" % (url, "(%d lines)" % len(hits) if hits else "(no price, term or guarantee seen)"))
+            for h in hits[:40]:
                 lines.append("    > " + h)
         lines.append("")
     path = os.path.join(run, "evidence.md")
@@ -566,6 +575,47 @@ def cmd_evidence(a):
 # ---------------------------------------------------------------- the checked table
 
 BASES = ("published", "ad", "owner said", "none")
+# what each copied list is called in checks.txt and changes.md
+FIELD_WORDS = {"includes": "feature", "bonuses": "extra", "free_way_in": "free way in",
+               "commitment": "commitment", "limits": "limit", "speed": "speed"}
+
+
+def _copied(value, where, field) -> list:
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise OfferError("%s: %s must be text, or a list of texts, copied from the page" % (where, field))
+    out = []
+    for x in value:
+        x = x.strip()
+        if x and x not in out:
+            out.append(x)
+    return out
+
+
+def _their_text(run: str, comps: dict, src: dict) -> dict:
+    """key -> every page and ad text read for that business, so a term can be checked anywhere on
+    their own site (a feature list is often on another page than the price)."""
+    out = {}
+    for s in src.values():
+        out[s["key"]] = out.get(s["key"], "") + "\n" + s["text"]
+    ads = {ad["library_id"]: ad for ad in read_json(os.path.join(run, "ads.json"), default=[])}
+    for c in comps["competitors"]:
+        for lib in c.get("ads", []):
+            if lib in ads:
+                out[c["key"]] = out.get(c["key"], "") + "\n" + ads[lib]["advertiser"] + "\n" + ads[lib]["text"]
+    return out
+
+
+def _empty_row(key, c):
+    row = {"competitor": key, "name": c["name"], "kind": c["kind"], "service": "(nothing found)",
+           "package": "", "price_text": "", "unit": "", "basis": "none", "source_url": "",
+           "guarantee": "", "status": "unknown", "amount": None, "currency": None, "period": "",
+           "note": "no offer found on what was read"}
+    row.update({f: [] for f in COPIED_LISTS})
+    return row
 
 
 def check_offers(run: str):
@@ -576,6 +626,7 @@ def check_offers(run: str):
     if not isinstance(offers, list):
         raise OfferError("offers.json must be a list of rows")
     src = sources(run)
+    theirs = _their_text(run, comps, src)
     checks, rows = [], []
     for i, o in enumerate(offers, 1):
         key = (o.get("competitor") or "").strip()
@@ -592,8 +643,9 @@ def check_offers(run: str):
                "service": (o.get("service") or "").strip().lower(), "package": (o.get("package") or "").strip(),
                "price_text": price_text, "unit": (o.get("unit") or "").strip(), "basis": basis,
                "source_url": url, "guarantee": (o.get("guarantee") or "").strip(),
-               "includes": list(o.get("includes") or []), "bonuses": list(o.get("bonuses") or []),
                "status": "unknown", "amount": None, "currency": None, "period": "", "note": ""}
+        for f in COPIED_LISTS:
+            row[f] = _copied(o.get(f), where, f)
         if not row["service"]:
             raise OfferError("%s: every row needs a service" % where)
         page = src.get(url, {}).get("text", "")
@@ -628,11 +680,25 @@ def check_offers(run: str):
             row["amount"] = 0.0 if amount is None and re.search(r"\bfree\b", row["price_text"], re.I) else amount
             row["currency"] = cur or info.get("currency")
             row["period"] = parse_period(row["unit"], row["price_text"])
-        if row["guarantee"]:
-            pool = page + "\n" + "\n".join(s["text"] for s in src.values() if s["key"] == key)
-            if not (key == "you" and basis == "owner said") and not found_in(row["guarantee"], pool):
+        # Everything else the row says about the plan is checked the same way, against the business's
+        # own pages and ads. Only the owner's own statements ('owner said') are taken as given.
+        if not (key == "you" and basis == "owner said"):
+            pool = page + "\n" + theirs.get(key, "")
+            if row["package"] and not found_in(row["package"], pool):
+                checks.append("%s: plan name %r is not on their pages word for word; cleared" % (where, row["package"]))
+                row["package"] = ""
+            if row["guarantee"] and not found_in(row["guarantee"], pool):
                 checks.append("%s: guarantee %r is not on their pages word for word; cleared" % (where, row["guarantee"]))
                 row["guarantee"] = ""
+            for f in COPIED_LISTS:
+                kept = []
+                for item in row[f]:
+                    if found_in(item, pool):
+                        kept.append(item)
+                    else:
+                        checks.append("%s: %s %r is not on their pages word for word; cleared" % (
+                            where, FIELD_WORDS[f], item))
+                row[f] = kept
         rows.append(row)
     # "Free" carries no currency sign: give it the currency the rest of the table uses
     cur_counts = {}
@@ -647,10 +713,7 @@ def check_offers(run: str):
     listed = {r["competitor"] for r in rows}
     for k, c in names.items():
         if k not in listed:
-            rows.append({"competitor": k, "name": c["name"], "kind": c["kind"], "service": "(nothing found)",
-                         "package": "", "price_text": "", "unit": "", "basis": "none", "source_url": "",
-                         "guarantee": "", "includes": [], "bonuses": [], "status": "unknown", "amount": None,
-                         "currency": None, "period": "", "note": "no offer found on what was read"})
+            rows.append(_empty_row(k, c))
     return info, comps, rows, checks
 
 
@@ -668,6 +731,7 @@ def summary(comps, rows) -> dict:
         "price_unknown": len(set(keys) - priced),
         "with_guarantee": len(guaranteed),
         "offer_rows": sum(1 for r in rows if r["competitor"] != "you" and r["service"] != "(nothing found)"),
+        "terms": term_summary(rows),
     }
 
 
@@ -684,15 +748,22 @@ def cmd_table(a):
     print("%d competitors (%d online, %d local); %d publish a price we checked word for word, %d unknown; "
           "%d state a guarantee" % (s["competitors"], s["online"], s["local"], s["with_published_price"],
                                     s["price_unknown"], s["with_guarantee"]))
+    said, none = term_lines(s["terms"])
+    if said:
+        print("checked word for word: " + "; ".join(said))
+    if none:
+        print("on what was read, " + "; ".join(none))
     print("%d checks changed or cleared something (see checks.txt)" % len(checks))
-    for c in checks[:20]:
+    for c in checks[:60]:
         print("  " + c)
+    if len(checks) > 60:
+        print("  ... and %d more in checks.txt" % (len(checks) - 60))
     print("table: %s" % os.path.join(run, "offer-table.html"))
     return 0
 
 
 COLUMNS = ["name", "competitor", "kind", "service", "package", "price_text", "period", "basis", "status",
-           "guarantee", "includes", "bonuses", "source_url"]
+           "free_way_in", "commitment", "limits", "speed", "guarantee", "includes", "bonuses", "source_url"]
 
 
 def _cell(r, k):
@@ -713,31 +784,45 @@ def _write_csv(path, rows):
     write_text(path, buf.getvalue())
 
 
+def _order(rows):
+    return sorted(rows, key=lambda r: (r["competitor"] != "you", r["service"], r["amount"] is None, r["amount"] or 0))
+
+
+_SHOWN = [("package", "Plan"), ("price_text", "Price"), ("free_way_in", "Free way in"), ("commitment", "Commitment"),
+          ("limits", "Limits"), ("speed", "Speed"), ("guarantee", "Guarantee"), ("includes", "Features"),
+          ("bonuses", "Extras")]
+
+
 def _table_md(info, s, rows):
+    said, none = term_lines(s["terms"])
     out = ["# Competitor offers: %s" % info["business"], "",
            "Run of %s. %d competitors (%d online, %d local), %d publish a price checked word for word against "
            "its source, %d unknown. Unknown means nobody published it where we looked; it is not cheap or "
-           "expensive." % (info["started"], s["competitors"], s["online"], s["local"], s["with_published_price"],
-                           s["price_unknown"]), "",
-           "| Who | Service | Package | Price | Guarantee | Source |", "|---|---|---|---|---|---|"]
-    for r in sorted(rows, key=lambda r: (r["competitor"] != "you", r["service"], r["amount"] is None, r["amount"] or 0)):
-        out.append("| %s | %s | %s | %s | %s | %s |" % (
-            r["name"].replace("|", "/"), r["service"], r["package"].replace("|", "/"),
-            (r["price_text"] or "unknown").replace("|", "/"), r["guarantee"].replace("|", "/") or "",
-            r["source_url"] or ""))
+           "expensive. Every plan name, feature, free way in, commitment, limit, speed and guarantee below was "
+           "found word for word on that business's own pages or ads. Counts are of what was read: \"none of\" "
+           "means nobody stated it where we looked." % (
+               info["started"], s["competitors"], s["online"], s["local"], s["with_published_price"],
+               s["price_unknown"]), ""]
+    out += ["- " + x for x in said + none] + ([""] if said or none else [])
+    out += ["| Who | Service | " + " | ".join(h for _, h in _SHOWN) + " | Source |",
+            "|---|---|" + "---|" * len(_SHOWN) + "---|"]
+    for r in _order(rows):
+        cells = [r["name"], r["service"]] + [_cell(r, k) for k, _ in _SHOWN] + [r["source_url"] or ""]
+        out.append("| " + " | ".join(c.replace("|", "/") for c in cells) + " |")
     return "\n".join(out) + "\n"
 
 
 def _table_html(info, s, rows):
     esc = html.escape
+    said, none = term_lines(s["terms"])
     body = []
-    for r in sorted(rows, key=lambda r: (r["competitor"] != "you", r["service"], r["amount"] is None, r["amount"] or 0)):
+    for r in _order(rows):
         src = '<a href="%s">source</a>' % esc(r["source_url"]) if r["source_url"] else ""
-        body.append("<tr class='%s'><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
-                    "<td>%s</td><td>%s</td></tr>" % (
-                        "you" if r["competitor"] == "you" else "", esc(r["name"]), esc(r["kind"]), esc(r["service"]),
-                        esc(r["package"]), esc(r["price_text"] or "unknown"), esc(r["guarantee"]),
-                        esc("; ".join(r["includes"] + r["bonuses"])), src))
+        cells = [r["name"], r["kind"], r["service"]] + [_cell(r, k) for k, _ in _SHOWN]
+        body.append("<tr class='%s'>%s<td>%s</td></tr>" % (
+            "you" if r["competitor"] == "you" else "", "".join("<td>%s</td>" % esc(c) for c in cells), src))
+    head = "".join("<th>%s</th>" % h for h in ["Who", "Kind", "Service"] + [h for _, h in _SHOWN] + ["Source"])
+    terms = "".join("<li>%s</li>" % esc(x) for x in said + none)
     return """<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Competitor offers</title>
 <style>body{font:14px/1.45 system-ui,sans-serif;margin:16px;color:#1c1c1c;background:#fff}
@@ -746,13 +831,15 @@ tr.you{background:#fff6d6}th{position:sticky;top:0;background:#f4f4f4}.wrap{over
 @media(prefers-color-scheme:dark){body{background:#151515;color:#eee}th{background:#262626}tr.you{background:#3a3214}td,th{border-color:#333}a{color:#8ab4f8}}</style>
 <h1>Competitor offers: %s</h1>
 <p>Run of %s. %d competitors (%d online, %d local). %d publish a price checked word for word against its source;
-%d unknown. Unknown means nobody published it where we looked.</p>
-<div class="wrap"><table><tr><th>Who</th><th>Kind</th><th>Service</th><th>Package</th><th>Price</th><th>Guarantee</th>
-<th>Includes and extras</th><th>Source</th></tr>
+%d unknown. Unknown means nobody published it where we looked. Every plan name, feature, free way in, commitment,
+limit, speed and guarantee below was found word for word on that business's own pages or ads. Counts are of
+what was read: "none of" means nobody stated it where we looked.</p>
+<ul>%s</ul>
+<div class="wrap"><table><tr>%s</tr>
 %s
 </table></div>
 """ % (esc(info["business"]), esc(info["started"]), s["competitors"], s["online"], s["local"],
-       s["with_published_price"], s["price_unknown"], "\n".join(body))
+       s["with_published_price"], s["price_unknown"], terms, head, "\n".join(body))
 
 
 # ---------------------------------------------------------------- changes between runs
@@ -764,7 +851,10 @@ def compare_tables(old: dict, new: dict) -> list:
             comps.setdefault(r["competitor"], r["name"])
             if r["service"] == "(nothing found)":
                 continue
-            offers[(r["competitor"], r["service"], r["package"].lower())] = r
+            k = (r["competitor"], r["service"], r["package"].lower())
+            # a plan name cleared by the check can leave two rows with one key: keep the one with a price
+            if k not in offers or (offers[k].get("amount") is None and r.get("amount") is not None):
+                offers[k] = r
         return comps, offers
 
     oc, oo = index(old)
@@ -785,6 +875,15 @@ def compare_tables(old: dict, new: dict) -> list:
             out.append(("price now published", b["name"], "%s: %s" % (label, b["price_text"])))
         elif a["amount"] is not None and b["amount"] is None:
             out.append(("price no longer published", b["name"], "%s: was %s" % (label, a["price_text"])))
+        for f in COPIED_LISTS:
+            was = {squash(x): x for x in as_list(a.get(f))}
+            now = {squash(x): x for x in as_list(b.get(f))}
+            for k2 in now:
+                if k2 not in was:
+                    out.append(("%s added" % FIELD_WORDS[f], b["name"], "%s: %r" % (label, now[k2])))
+            for k2 in was:
+                if k2 not in now:
+                    out.append(("%s dropped" % FIELD_WORDS[f], b["name"], "%s: was %r" % (label, was[k2])))
         if a["guarantee"] and not b["guarantee"]:
             out.append(("guarantee dropped", b["name"], "%s: was %r" % (label, a["guarantee"])))
         elif b["guarantee"] and not a["guarantee"]:

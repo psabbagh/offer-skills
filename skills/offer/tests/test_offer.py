@@ -56,7 +56,9 @@ BRIGHTPATH.EXAMPLE
 """
 
 PRICING_HTML = """<html><head><title>Pricing</title><script>var x = "$999";</script></head><body>
-<h1>Coaching plans</h1><p>Group coaching: <b>$497</b>/month</p>
+<h1>Coaching plans</h1><h2>Group</h2><p>Group coaching: <b>$497</b>/month</p>
+<ul><li>Weekly group call</li><li>Template   library</li></ul>
+<p>14-day free trial. Cancel anytime.</p><p>Up to 3 seats</p><p>Onboarding within 48 hours</p>
 <p>Private coaching: $2,500 per month</p><p>If you do not land a client in 60 days, we refund you in full.</p>
 </body></html>"""
 HOME_HTML = """<html><head><title>Home</title></head><body><h1>We coach agency owners</h1>
@@ -103,6 +105,29 @@ class Helpers(unittest.TestCase):
         self.assertFalse(offerlib.found_in("$2,400 per month", "Private coaching: $2,500 per month"))
         self.assertTrue(offerlib.found_in("30-day guarantee", "a 30–day guarantee"))
         self.assertFalse(offerlib.found_in("", "anything"))
+
+    def test_term_tags_and_counts(self):
+        rows = [{"competitor": "a", "free_way_in": ["Free forever plan"], "commitment": ["Billed annually"],
+                 "period": "year"},
+                {"competitor": "b", "free_way_in": ["14-day free trial"], "commitment": ["Cancel anytime"],
+                 "period": "month"},
+                {"competitor": "c", "commitment": ["Billed annually or $12 monthly"], "period": "year"},
+                {"competitor": "you", "guarantee": "30-day money-back guarantee"}]
+        self.assertEqual(offerlib.row_tags(rows[0]), {"free plan", "annual billing", "risk reversal"})
+        terms = {t["tag"]: t for t in offerlib.term_summary(rows)}
+        self.assertEqual(terms["free plan"]["count"], 1)
+        self.assertEqual(terms["annual billing"]["count"], 2)
+        self.assertEqual(terms["annual only"]["count"], 1, "c also sells monthly")
+        self.assertEqual(terms["risk reversal"]["count"], 2)
+        self.assertEqual(terms["guarantee"]["count"], 0)
+        self.assertTrue(terms["guarantee"]["you"])
+        shown_monthly = [{"competitor": "d", "price_text": "$199/mo, billed annually", "period": "month"}]
+        self.assertEqual([t["count"] for t in offerlib.term_summary(shown_monthly) if t["tag"] == "annual only"], [1],
+                         "a per-month price billed annually is annual only")
+        said, none = offerlib.term_lines(offerlib.term_summary(rows))
+        self.assertIn("1 of 3 have a free plan", said)
+        self.assertIn("1 of 3 sell annual only", said)
+        self.assertIn("none of 3 state a guarantee", none)
 
     def test_keys(self):
         self.assertEqual(offer.competitor_key("https://www.Acme.example/about"), "acme.example")
@@ -210,15 +235,14 @@ class Flow(Env):
         code, out = self.run_cmd("table", "--run", run)
         self.assertEqual(code, 0, out)
         t = offerlib.read_json(os.path.join(run, "table.json"))
-        rows = {(r["competitor"], r["package"]): r for r in t["rows"]}
-        good = rows[("brightpath.example", "")]
+        good, made_up, other_page, you, quiet = t["rows"]
         self.assertEqual((good["status"], good["amount"], good["period"]), ("checked", 497.0, "month"))
         self.assertEqual(good["guarantee"], "we refund you in full")
         # $999 sits only inside a <script>, which is not page text: it is not a published price
-        self.assertEqual(rows[("brightpath.example", "made up")]["price_text"], "")
-        self.assertEqual(rows[("brightpath.example", "other page")]["status"], "unknown")
-        self.assertEqual(rows[("you", "")]["status"], "owner said")
-        quiet = rows[("quietco.example", "")]
+        self.assertEqual(made_up["price_text"], "")
+        self.assertEqual(made_up["package"], "", "a plan name not on the page is cleared too")
+        self.assertEqual(other_page["status"], "unknown")
+        self.assertEqual(you["status"], "owner said")
         self.assertEqual(quiet["service"], "(nothing found)")
         self.assertEqual(t["summary"]["with_published_price"], 1)
         self.assertEqual(t["summary"]["price_unknown"], 1)
@@ -255,6 +279,118 @@ class Flow(Env):
         self.assertIn("$497 to $597", md)
         self.assertIn("guarantee dropped", md)
         self.assertIn("new competitor", md)
+
+
+    # ---------------------------------------------------------------- plans, features and terms
+
+    def _terms_run(self, offers, extra_pages=(), ads=None, comp_ads=None):
+        run = self.start()
+        self._seed_run(run)
+        with open(os.path.join(run, "pages.jsonl"), "a") as fh:
+            for key, url, text in extra_pages:
+                fh.write(json.dumps({"key": key, "url": url, "title": "", "text": text, "via": "agent"}) + "\n")
+        if ads is not None:
+            offerlib.write_json(os.path.join(run, "ads.json"), ads)
+        if comp_ads:
+            comps = offerlib.read_json(os.path.join(run, "competitors.json"))
+            for c in comps["competitors"]:
+                c["ads"] = comp_ads.get(c["key"], [])
+            offerlib.write_json(os.path.join(run, "competitors.json"), comps)
+        offerlib.write_json(os.path.join(run, "offers.json"), offers)
+        code, out = self.run_cmd("table", "--run", run)
+        self.assertEqual(code, 0, out)
+        return run, offerlib.read_json(os.path.join(run, "table.json")), out
+
+    GOOD = {"competitor": "brightpath.example", "service": "group coaching", "package": "Group",
+            "price_text": "$497", "unit": "per month", "basis": "published",
+            "source_url": "https://brightpath.example/pricing"}
+
+    def test_every_plan_feature_and_term_is_checked_word_for_word(self):
+        row = dict(self.GOOD, includes=["Weekly group call", "Done-for-you ads"],
+                   bonuses=["Template library", "A free laptop"], free_way_in="14-day free trial",
+                   commitment=["Cancel anytime", "12-month contract"], limits=["Up to 3 seats", "Unlimited seats"],
+                   speed=["Onboarding within 48 hours", "Live in 5 minutes"], guarantee="we refund you in full")
+        planted_plan = dict(self.GOOD, package="Platinum")
+        run, t, out = self._terms_run([row, planted_plan])
+        r, p = t["rows"][0], t["rows"][1]
+        self.assertEqual(r["package"], "Group")
+        self.assertEqual(r["includes"], ["Weekly group call"], "the planted feature is cleared")
+        self.assertEqual(r["bonuses"], ["Template library"])
+        self.assertEqual(r["free_way_in"], ["14-day free trial"])
+        self.assertEqual(r["commitment"], ["Cancel anytime"])
+        self.assertEqual(r["limits"], ["Up to 3 seats"])
+        self.assertEqual(r["speed"], ["Onboarding within 48 hours"])
+        self.assertEqual(r["guarantee"], "we refund you in full")
+        self.assertEqual(p["package"], "", "a plan name not on the page is cleared")
+        self.assertEqual(p["status"], "checked", "clearing the plan name leaves the checked price alone")
+        for planted in ("feature 'Done-for-you ads'", "extra 'A free laptop'", "commitment '12-month contract'",
+                        "limit 'Unlimited seats'", "speed 'Live in 5 minutes'", "plan name 'Platinum'"):
+            self.assertIn(planted + " is not on their pages word for word; cleared", out)
+        with open(os.path.join(run, "checks.txt")) as fh:
+            self.assertEqual(fh.read().count("cleared"), 6)
+        with open(os.path.join(run, "offer-table.html")) as fh:
+            page = fh.read()
+        for shown in ("Free way in", "14-day free trial", "Cancel anytime", "Up to 3 seats", "Onboarding within 48 hours",
+                      "Weekly group call", "1 of 2 offer a free trial", "none of 2 have a free plan"):
+            self.assertIn(shown, page)
+        self.assertNotIn("Done-for-you ads", page)
+        with open(os.path.join(run, "offer-table.csv")) as fh:
+            self.assertIn("free_way_in", fh.readline())
+
+    def test_a_feature_counts_on_their_other_pages_and_ads_but_not_someone_elses(self):
+        ad = {"library_id": "42", "advertiser": "Brightpath", "url": "https://www.facebook.com/ads/library/?id=42",
+              "text": "Every plan comes with a private Slack channel.", "sites": ["brightpath.example"]}
+        row = dict(self.GOOD, includes=["Unlimited playbooks", "private Slack channel", "Hand-written audits"])
+        run, t, out = self._terms_run(
+            [row], extra_pages=[("brightpath.example", "https://brightpath.example/features", "Unlimited playbooks"),
+                                ("quietco.example", "https://quietco.example/features", "Hand-written audits")],
+            ads=[ad], comp_ads={"brightpath.example": ["42"]})
+        self.assertEqual(t["rows"][0]["includes"], ["Unlimited playbooks", "private Slack channel"])
+        self.assertIn("feature 'Hand-written audits' is not on their pages", out)
+
+    def test_owner_said_is_exempt_and_published_owner_rows_are_checked(self):
+        said = {"competitor": "you", "service": "group coaching", "price_text": "$300", "basis": "owner said",
+                "includes": ["Two calls a week"], "free_way_in": ["7-day free trial"]}
+        published = {"competitor": "you", "service": "private coaching", "price_text": "", "basis": "none",
+                     "includes": ["Two calls a week"]}
+        run, t, out = self._terms_run([said, published])
+        you = [r for r in t["rows"] if r["competitor"] == "you"]
+        self.assertEqual(you[0]["includes"], ["Two calls a week"])
+        self.assertEqual(you[0]["free_way_in"], ["7-day free trial"])
+        self.assertEqual(you[1]["includes"], [], "not owner said: checked against the owner's own pages")
+
+    def test_a_term_must_be_text(self):
+        run = self.start()
+        self._seed_run(run)
+        offerlib.write_json(os.path.join(run, "offers.json"), [dict(self.GOOD, limits=[3])])
+        code, out = self.run_cmd("table", "--run", run)
+        self.assertEqual(code, 2)
+        self.assertIn("limits must be text", out)
+
+    def test_changes_report_features_and_terms(self):
+        first = self.start()
+        self._seed_run(first)
+        offerlib.write_json(os.path.join(first, "offers.json"), [dict(
+            self.GOOD, includes=["Weekly group call"], free_way_in="14-day free trial")])
+        self.run_cmd("table", "--run", first)
+        second = self.start()
+        page = PRICING_HTML.replace("14-day free trial", "").replace("</ul>", "<li>Monthly hot seat</li></ul>")
+        self._seed_run(second, page=page)
+        offerlib.write_json(os.path.join(second, "offers.json"), [dict(
+            self.GOOD, includes=["Weekly group call", "Monthly hot seat"], free_way_in="14-day free trial")])
+        self.run_cmd("table", "--run", second)
+        code, out = self.run_cmd("changes", "--business", "Acme Coaching")
+        self.assertEqual(code, 0, out)
+        with open(os.path.join(second, "changes.md")) as fh:
+            md = fh.read()
+        self.assertIn("feature added**: Brightpath. group coaching, Group: 'Monthly hot seat'", md)
+        self.assertIn("free way in dropped**: Brightpath. group coaching, Group: was '14-day free trial'", md)
+
+    def test_changes_read_an_older_table_without_terms(self):
+        old = {"rows": [{"competitor": "a", "name": "A", "service": "s", "package": "", "amount": 1.0,
+                         "price_text": "$1", "period": "month", "guarantee": "", "includes": [], "bonuses": []}]}
+        new = {"rows": [dict(old["rows"][0], speed=["Same-day setup"])]}
+        self.assertEqual(offer.compare_tables(old, new), [("speed added", "A", "s: 'Same-day setup'")])
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

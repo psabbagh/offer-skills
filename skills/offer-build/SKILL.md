@@ -4,7 +4,8 @@ description: >-
   Rebuild a business's offer on the offer ideas in the book $100M Offers by Alex Hormozi (an
   independent tool, not made or endorsed by him or Acquisition.com), score it and every
   competitor's offer on the same seven questions with evidence quoted for each score, rank the
-  owner against all of them, draft the offer page and a one-line pitch checked against facts the
+  owner against all of them, find the gaps in the market from the checked table ("nobody offers a
+  free plan"), draft the offer page and a one-line pitch checked against facts the
   owner approved, then test the old offer and the new one on the same 100 simulated buyers ("31 of
   100 would buy today, 58 with the new offer"). Everything is a draft for approval. Use after /offer
   and offer-price, or when someone asks make my offer better, make an offer people can't refuse,
@@ -38,7 +39,18 @@ The ideas are in `references/offer-ideas.md`: read it before Step 3. Credit the 
 of the ideas whenever you explain them, say plainly that this tool is not endorsed by Alex Hormozi,
 and never quote the book.
 
-## Step 1: get the facts from the owner
+## Step 1: see the gaps, then get the facts from the owner
+
+```bash
+TOOL gaps --business "<business name>"
+```
+
+It reads the checked offer table and writes `gaps.md`: how many competitors state each term (free
+plan, free trial, demo, free quote, cancel anytime, annual only, setup fee, contract, deposit,
+call-out fee, guarantee, limits, speed, features), what nobody offers ("nobody offers a free plan"),
+what most competitors state and the owner does not, and how many take the risk off the buyer in
+any form. Every term behind those counts was found word for word on a competitor's own pages. Tell
+the owner the two or three gaps that matter most for their buyer. Then:
 
 ```bash
 TOOL facts --business "<business name>"
@@ -50,13 +62,15 @@ what they confirm, in their words:
 - `prices`: the price of the new offer, from the moves they approved in offer-price (`moves.json`),
   or the current price
 - `guarantees`: any guarantee they will honour, exactly as they would state it
+- `terms`: a free plan, trial, demo or free quote, cancel anytime or other commitment terms, and
+  speed promises they will honour ("14-day free trial", "Cancel anytime", "Live in 24 hours")
 - `numbers`: results and counts they can prove ("42 agencies coached since 2023")
 - `limits` and `deadlines`: only real ones ("We take 5 new agencies a month")
 - `bonuses`: extras they will really include
 - `proof`: testimonials or case studies they have permission to use
 
-Suggest what the research shows competitors offer (a guarantee most of them give, an extra nobody
-gives), but the owner decides. A blank list is fine. Never fill one in for them.
+Suggest from `gaps.md` what the research shows (a free trial most competitors give, a free plan
+nobody gives, a setup fee the owner could drop), but the owner decides. A blank list is fine. Never fill one in for them.
 
 ## Step 2: score every offer, theirs and the owner's
 
@@ -71,7 +85,13 @@ questions in `scripts/build.py` (outcome, proof, speed, ease, risk, stack, now),
 ```
 
 A score above 0 needs a short `quote` copied word for word from that business's pages or ads in the
-run (from `evidence.md` or `pages.jsonl`). With more than 15 competitors, score them in waves of 10
+run (from `evidence.md`, `pages.jsonl` or the checked fields in `table.json`).
+
+Score `risk` from risk reversal in any form: a free plan, a free trial, cancel anytime, a refund or
+a guarantee, pay on results. A missing guarantee does not cost an online business points when a
+free plan, a trial or cancel anytime takes the risk off: "Free forever plan" can score 3. Score
+`speed` from the row's `speed` field (time to go live, onboarding, response time) as well as from
+promised results. With more than 15 competitors, score them in waves of 10
 sub-agents, each given the questions and one competitor's evidence. Then:
 
 ```bash
@@ -87,10 +107,11 @@ points, and which competitors score highest and why.
 With the owner, walk `references/offer-ideas.md` sections 2 to 5:
 
 1. List the buyer's problems in order, from the research (what competitors promise, what their
-   offers leave out) and from the owner.
+   offers leave out, the gaps in `gaps.md`) and from the owner.
 2. Turn each into a part of the offer; keep what solves a real problem, cut filler.
 3. Name it after the result, for the buyer it is for.
-4. Add the risk reversal, extras, limits and deadlines, only from `facts.json`.
+4. Add the risk reversal (a guarantee, or for an online business more often a free plan, a trial
+   or cancel anytime), extras, limits and deadlines, only from `facts.json`.
 5. Price it from the approved moves.
 
 Write three files in the run folder:

@@ -187,6 +187,53 @@ class Panel(Env):
         self.assertEqual((len(cmp_["moved_to_buy"]), len(cmp_["stopped_buying"])), (5, 0))
 
 
+class OnlineTerms(Env):
+    """An online business: almost nobody states a guarantee, so risk reversal comes in other forms."""
+
+    def table(self, rows):
+        offerlib.write_json(os.path.join(self.run_dir, "table.json"), {"rows": rows})
+
+    def test_gaps_from_the_checked_table(self):
+        self.table([
+            {"competitor": "a.example", "free_way_in": ["14-day free trial"], "commitment": ["Billed annually"],
+             "period": "year", "includes": ["SSO"]},
+            {"competitor": "b.example", "free_way_in": ["Start your free trial"], "commitment": ["Cancel anytime"],
+             "period": "month"},
+            {"competitor": "c.example", "commitment": ["Billed annually"], "period": "year"},
+            {"competitor": "you", "commitment": ["Cancel anytime"], "period": "month"}])
+        code, out = self.call("gaps", "--run", self.run_dir)
+        self.assertEqual(code, 0, out)
+        self.assertIn("nobody offers: have a free plan", out)
+        self.assertIn("offer a free trial (2 of 3)", out)
+        self.assertIn("risk reversal in any form: 2 of 3 competitors; you: yes", out)
+        with open(os.path.join(self.run_dir, "gaps.md")) as fh:
+            md = fh.read()
+        self.assertIn("| sell annual only | 2 of 3 | no |", md)
+        self.assertIn("A missing guarantee is not a gap", md)
+
+    def test_gaps_need_the_table(self):
+        code, out = self.call("gaps", "--run", self.run_dir)
+        self.assertEqual(code, 2)
+        self.assertIn("no table.json", out)
+
+    def test_a_free_plan_scores_risk_without_any_guarantee(self):
+        with open(os.path.join(self.run_dir, "pages.jsonl"), "a") as fh:
+            fh.write(json.dumps({"key": "you", "url": "https://acme.example/pricing",
+                                 "text": "Free forever plan for one user. Cancel anytime."}) + "\n")
+        offerlib.write_json(os.path.join(self.run_dir, "scores.json"), [
+            {"competitor": "you", "ratings": {"risk": {"score": 3, "quote": "Free forever plan for one user"}}}])
+        code, out = self.call("score", "--run", self.run_dir)
+        self.assertEqual(code, 0, out)
+        card = offerlib.read_json(os.path.join(self.run_dir, "scorecard.json"))
+        self.assertEqual(card["ranked"][0]["ratings"]["risk"]["score"], 3)
+        self.assertIn("free plan", dict(build.QUESTIONS)["risk"])
+
+    def test_an_approved_term_passes_the_copy_check(self):
+        facts = dict(FACTS, terms=["14-day free trial", "Cancel anytime"])
+        self.assertEqual(build.check_copy("Start with a 14-day free trial. Cancel anytime.", facts, []), [])
+        refused = build.check_copy("Start with a 30-day free trial.", facts, [])
+        self.assertTrue(refused)
+
 class SharedCopies(unittest.TestCase):
     def test_buyers_is_identical_to_startup_buyers(self):
         original = os.path.join(ROOT, "startup-buyers", "buyers.py")

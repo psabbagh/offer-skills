@@ -3,6 +3,7 @@
 no network.
 
     build.py facts [--run R | --business B]                     write facts.json to fill in, if missing
+    build.py gaps [--run R | --business B]                      what competitors state, what nobody offers, what you lack
     build.py score [--run R | --business B]                     check scores.json against the evidence, rank everyone
     build.py check-copy FILE [--run R | --business B]           refuse any claim the owner did not approve
     build.py panel --customer customer.json --old old.md --new new.md [--n 100 | --quick] [--seed S]
@@ -31,26 +32,29 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from offerlib import OfferError, found_in, read_json, read_jsonl, resolve_run, write_json, write_text  # noqa: E402
+from offerlib import (RISK_REVERSAL, OfferError, found_in, read_json, read_jsonl, resolve_run,  # noqa: E402
+                      term_summary, write_json, write_text)
 
 QUESTIONS = [
     ("outcome", "Does it say plainly what result the buyer gets?"),
     ("proof", "Does it show that this works for people like the buyer (results, reviews, numbers)?"),
-    ("speed", "Does it say how soon the first result comes?"),
+    ("speed", "Does it say how soon the first result comes (go live, onboarding, response time)?"),
     ("ease", "Does it say what the buyer no longer has to do or figure out alone?"),
-    ("risk", "Does it take the risk off the buyer (a guarantee, a trial, pay on results)?"),
+    ("risk", "Does it take the risk off the buyer in any form (a free plan, a free trial, cancel anytime, "
+             "a refund or a guarantee, pay on results)?"),
     ("stack", "Do the extras solve the problems the buyer meets next?"),
     ("now", "Is there an honest reason to act now?"),
 ]
 MAX = 3 * len(QUESTIONS)
-FACT_KINDS = ("prices", "guarantees", "numbers", "limits", "deadlines", "bonuses", "proof")
+FACT_KINDS = ("prices", "guarantees", "terms", "numbers", "limits", "deadlines", "bonuses", "proof")
 
 FACTS_TEMPLATE = {
     "business": "",
     "offer_name": "",
     "_read_me": ("Only what the owner approved goes in here. The copy check refuses any price, number, "
                  "guarantee, limit, deadline or bonus that is not written below, word for word."),
-    "prices": [], "guarantees": [], "numbers": [], "limits": [], "deadlines": [], "bonuses": [], "proof": [],
+    "prices": [], "guarantees": [], "terms": [], "numbers": [], "limits": [], "deadlines": [], "bonuses": [],
+    "proof": [],
 }
 
 
@@ -63,7 +67,7 @@ def run_of(a) -> str:
 def load_facts(run: str) -> dict:
     facts = read_json(os.path.join(run, "facts.json"))
     for k in FACT_KINDS:
-        v = facts.get(k, [])
+        v = facts.get(k) or []
         if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
             raise OfferError("facts.json: %s must be a list of approved lines (strings)" % k)
         facts[k] = [x.strip() for x in v if x.strip()]
@@ -82,6 +86,50 @@ def cmd_facts(a):
     t["business"] = info.get("business", "")
     write_json(path, t)
     print("wrote %s: fill it only with what the owner approves" % path)
+    return 0
+
+
+# ---------------------------------------------------------------- gaps
+
+def gaps(run: str) -> dict:
+    """From the checked table: how many competitors state each term, which terms nobody states, and
+    which most competitors state while the owner does not."""
+    if not os.path.exists(os.path.join(run, "table.json")):
+        raise OfferError("no table.json in %s yet: run the offer skill's offer.py table first" % run)
+    t = read_json(os.path.join(run, "table.json"))
+    terms = term_summary(t["rows"])
+    of = terms[0]["of"] if terms else 0
+    nobody = [x for x in terms if of and not x["count"]]
+    you_lack = [x for x in terms if of and x["you"] is False and x["count"] * 2 >= of]
+    risk = [x for x in terms if x["tag"] == "risk reversal"][0]
+    return {"of": of, "terms": terms, "nobody": nobody, "you_lack": you_lack, "risk": risk}
+
+
+def cmd_gaps(a):
+    run = run_of(a)
+    g = gaps(run)
+    yes = {True: "yes", False: "no", None: "no row for you"}
+    lines = ["# What competitors state, and what nobody offers", "",
+             "From the checked offer table: every term below was found word for word on a competitor's own "
+             "pages or ads. Counts are of what was read; \"nobody\" means nobody stated it where we looked.", "",
+             "| Term | Competitors | You |", "|---|---|---|"]
+    for x in g["terms"]:
+        lines.append("| %s | %d of %d | %s |" % (x["label"], x["count"], x["of"], yes[x["you"]]))
+    lines += ["", "## Nobody offers", ""] + (["- " + x["label"] for x in g["nobody"]] or ["(nothing: every term is stated by someone)"])
+    lines += ["", "## Most competitors state it, you do not", ""] + (
+        ["- %s (%d of %d)" % (x["label"], x["count"], x["of"]) for x in g["you_lack"]] or ["(none)"])
+    r = g["risk"]
+    lines += ["", "Risk reversal in any form (%s): %d of %d competitors; you: %s. A missing guarantee is not a gap "
+              "when a free plan, a trial or cancel anytime already takes the risk off the buyer." % (
+                  ", ".join(RISK_REVERSAL), r["count"], r["of"], yes[r["you"]])]
+    write_text(os.path.join(run, "gaps.md"), "\n".join(lines) + "\n")
+    if g["nobody"]:
+        print("nobody offers: " + "; ".join(x["label"] for x in g["nobody"]))
+    if g["you_lack"]:
+        print("most competitors, not you: " + "; ".join("%s (%d of %d)" % (x["label"], x["count"], x["of"])
+                                                       for x in g["you_lack"]))
+    print("risk reversal in any form: %d of %d competitors; you: %s" % (r["count"], r["of"], yes[r["you"]]))
+    print("wrote %s" % os.path.join(run, "gaps.md"))
     return 0
 
 
@@ -229,6 +277,7 @@ def _numbers_in(text: str) -> set:
 
 def check_copy(text: str, facts: dict, competitor_names: list) -> list:
     """Problems in a draft: each is (line, kind, sentence, why). An empty list means it passes."""
+    facts = {k: list(facts.get(k) or []) for k in FACT_KINDS}  # a facts.json written before a kind existed
     approved_all = "\n".join(x for k in FACT_KINDS for x in facts[k])
     approved_numbers = _numbers_in(approved_all)
     problems = []
@@ -379,6 +428,7 @@ def main(argv=None):
         return sp
 
     add("facts", cmd_facts)
+    add("gaps", cmd_gaps)
     add("score", cmd_score)
     add("check-copy", cmd_check_copy).add_argument("file")
     pn = add("panel", cmd_panel)

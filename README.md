@@ -58,9 +58,9 @@ two steps: where your price sits, and the new offer.
 
 | Skill | What it does |
 |---|---|
-| `offer` | Finds your competitors online (web search, the public Meta Ad Library, their sales and pricing pages) and near you, reads their pages, and builds one table of every service, package, price and guarantee. Every price is checked word for word against the page or ad it came from; a price nobody publishes stays **unknown**, never a guess. Keeps every run, and next time tells you what changed: prices raised, new competitors, guarantees dropped. |
+| `offer` | Finds your competitors online (web search, the public Meta Ad Library, their sales and pricing pages) and near you, reads their pages, and builds one table of every plan, feature and price, with each free plan or trial, commitment (annual only, setup fee, contract), limit, speed and guarantee. Works for online businesses (SaaS, courses, agencies) and local ones. Every price is checked word for word against the page or ad it came from, and every plan name, feature and term against the business's own pages; a price nobody publishes stays **unknown**, never a guess, and a feature not on the page is cleared. Counts what competitors state ("4 of 11 have a free plan, 6 sell annual only"). Keeps every run, and next time tells you what changed: prices raised, features added, a free trial dropped, new competitors. |
 | `offer-price` | Where your price sits, service by service, against the published prices: how many charge more and less, the middle of the market, and what each sale leaves you at each price. Ends with the moves the evidence supports, for you to approve. |
-| `offer-build` | Scores your offer and your competitors' on seven questions, each score backed by a quote from what was read, rebuilds your offer, drafts the page and a short pitch, and refuses any price, number, guarantee, limit or deadline you did not approve. Then the same simulated buyers see your old offer and your new one, and it counts who would buy each. |
+| `offer-build` | Shows the gaps in your market ("nobody offers a free plan"), scores your offer and your competitors' on seven questions, each score backed by a quote from what was read (a free plan, a trial or cancel anytime counts as taking the risk off the buyer, so no guarantee is no penalty), rebuilds your offer, drafts the page and a short pitch, and refuses any price, number, guarantee, limit or deadline you did not approve. Then the same simulated buyers see your old offer and your new one, and it counts who would buy each. |
 
 ## What it needs
 
@@ -92,7 +92,7 @@ search presence will be missed. It does not scrape Google Maps.
 **It does not change anything.** It never publishes, edits your website, changes a price,
 contacts anyone or signs in anywhere. Every output is a file for you.
 
-**It does not promise for you.** The new offer only uses prices, guarantees, numbers, limits,
+**It does not promise for you.** The new offer only uses prices, guarantees, terms, numbers, limits,
 deadlines and extras you approve, and a check refuses anything else. It never invents scarcity.
 
 **Simulated buyers are not customers.** They are good at showing objections and what would change
